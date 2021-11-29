@@ -6,7 +6,7 @@ uu.chdir(__file__)
 dir_data = "data/cifar10"
 
 # %% 一次失败的尝试
-# from torchvision.datasets import ImageFolder
+from torchvision.datasets import ImageFolder
 # dataset = ImageFolder(dir_data+'/train', transform=ToTensor())
 
 # %% 加载数据
@@ -40,8 +40,8 @@ class ImageFolder2(data.Dataset):
 
     def _build_classes(self, labels):
         self.classes = labels["label"].unique()
-        _map = zip(self.classes, range(len(self.classes)))
-        self.class_to_idx = dict(_map)
+        self.class_to_idx = dict(zip(self.classes, range(len(self.classes))))
+        # self.idx_to_class = {i:c for c, i in self.class_to_idx.items()}
         labels["label"] = labels["label"].map(self.class_to_idx)
         return labels
 
@@ -132,18 +132,19 @@ load_pretrained = False
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
-model = torchvision.models.resnet18(pretrained=load_pretrained)
+# model = torchvision.models.resnet18(pretrained=load_pretrained)
+model = torchvision.models.resnet50(pretrained=load_pretrained)
 if load_pretrained:
     model.load_state_dict(torch.load(path_model))
 
 model.to(device)  # model into cuda
-print(model)
+# print(model)
 
 # %% 修改模型
 # 原本的输出：(fc): Linear(in_features=512, out_features=1000, bias=True)
 inchannel = model.fc.in_features  # 重新定义fc全连接层，此时，会进行参数的更新
 model.fc = nn.Linear(inchannel, len(datasets.classes))
-print(model)
+# print(model)
 
 # %%
 if load_pretrained:
@@ -158,6 +159,8 @@ if load_pretrained:
 # 进行学习的精确性肯定更好，resnet本身这个模型的参数不是很庞大
 
 # %%
+from pytorchtools import EarlyStopping
+
 def fit(model, train_loader, loss_func, optimizer, grad_clip=None):
     model.train()  # 设置模型到训练模式，只对部分模型有影响（包含Dropout，BatchNorm）
     for images, labels in train_loader:
@@ -193,11 +196,15 @@ def evaluate(model, val_loader, loss_func):
     val_size = len(val_loader.dataset)
     val_loss /= val_size
     print(f'Test-Loss: {val_loss:.4f}, Accuracy: {correct}/{val_size} ({100*correct/val_size:.0f}%)')
+    return val_loss
 
 
 # Set up cutom optimizer with weight decay
 epochs = 5
-path_model = uu.rpath("cifar10_resnet.pt")
+path_model = uu.rpath("tmp/cifar10_resnet.pt")
+path_checkpoint = uu.rpath("tmp/checkpoint.pt")
+early_stopping = EarlyStopping(patience=7, verbose=True, path=path_checkpoint)
+
 torch.cuda.empty_cache()
 
 # optimizer = torch.optim.SGD(model.parameters(), lr=0.001, momentum=0.9)
@@ -208,7 +215,10 @@ sched = torch.optim.lr_scheduler.OneCycleLR(optimizer, max_lr=0.01, epochs=epoch
 try:
     for epoch in range(epochs):
         fit(model, train_dl, F.cross_entropy, optimizer)
-        evaluate(model, val_dl, F.cross_entropy)
+        val_loss = evaluate(model, val_dl, F.cross_entropy)
+        if early_stopping(val_loss, model):
+            model.load_state_dict(torch.load(early_stopping.path))
+            break
         sched.step()  # update learning rate
 except Exception as e:
     print(f">>> 中断: {e}\n保存模型至【{path_model}】")
@@ -216,13 +226,11 @@ finally:
     torch.save(model.state_dict(), path_model)
 
 # %% 加载模型，恢复运算
-net = torchvision.models.resnet18(pretrained=False)
-inchannel = net.fc.in_features
-net.fc = nn.Linear(inchannel, len(datasets.classes))
+if False:
+    net = torchvision.models.resnet18(pretrained=False)
+    inchannel = net.fc.in_features
+    net.fc = nn.Linear(inchannel, len(datasets.classes))
 
-net.load_state_dict(torch.load(path_model))
+    net.load_state_dict(torch.load(path_model))
 
-# evaluate(net, val_dl, F.cross_entropy)
-
-# %%
-model = net
+    # evaluate(net, val_dl, F.cross_entropy)
