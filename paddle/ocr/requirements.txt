@@ -1,0 +1,5 @@
+paddlepaddle
+paddle2onnx
+opencv-python
+imgaug
+pyclipper
