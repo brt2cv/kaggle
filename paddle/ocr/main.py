@@ -4,6 +4,7 @@
 # @Link    : https://gitee.com/brt2
 
 # 参考: https://github.com/PaddlePaddle/PaddleOCR/blob/release/2.3/paddleocr.py
+# 模型下载: https://github.com/brt2cv/kaggle/releases/download/PP-OCRv2.1/models.7z
 
 from tools.infer.predict_system import TextSystem
 from tools.infer.utility import parse_args
